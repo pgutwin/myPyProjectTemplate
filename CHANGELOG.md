@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Initial version 
-
+  - Now with directories saved with .gitkeep
 
 
 
