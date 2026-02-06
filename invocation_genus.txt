@@ -1,0 +1,7 @@
+* genus [-abort_on_error] [-batch] [-del_scale 10] [-disable_user_startup] [-execute command]+ [-files string]+ [-help] [-legacy_ui] [-lic_stack integer] [-lic_startup string] [-lic_startup_options string]+ [-log prefix] [-no_gui] [-legacy_gui] [-overwrite] [-version] [-wait integer]
+
+genus [-abort_on_error] [-no_gui] [-batch] [-files string]+
+
+genus -abort_on_error -no_gui -batch -files "genus_commands.tcl"
+
+example: "genus" "-abort_on_error" "-no_gui" "-batch" "-files" "genus_commands.tcl" 

@@ -1,13 +1,12 @@
-# Project: <Working Name>
+# Project: PFXflow
 
 ## 0. Meta & Status
 
-- **Owner:** <your name>
-- **Doc status:** Draft / In progress / Stable
-- **Last updated:** <YYYY-MM-DD>
+- **Owner:** Paul Gutwin
+- **Doc status:** Draft 
+- **Last updated:** 2026-01-19
 - **Change log:**
-  - <YYYY-MM-DD> – Initial draft
-  - <YYYY-MM-DD> – Updated <section> with <change>
+  - 2026-01-19 – Initial draft
 
 ---
 
@@ -15,9 +14,11 @@
 
 ### 1.1 Problem Statement
 
-What problem does this project solve? For whom? In what context?
+There is a need for a need for a light-weight VLSI block implementation experiment manager.
+The goal of this experiment manager is, given a specific design, run the design with the same flow
 
-> One or two paragraphs that a technically literate Python user can read and say “got it.”
+
+The design flow should be based on a "template" set of scripts that can be modified.
 
 Focus on *user-visible behavior*, not implementation details.
 

@@ -1,0 +1,2 @@
+innovus -stylus -64  -init innovus_cmds.tcl -log <path_to_log_file>
+

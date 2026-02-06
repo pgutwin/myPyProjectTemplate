@@ -1,0 +1,930 @@
+# Project: PFXFlow
+
+## 0. Meta & Status
+
+-   **Owner:** Paul Gutwin
+-   **Doc status:** Draft (Master Specification)
+-   **Last updated:** 2026-02-03
+
+### Change Log
+
+-   2026-02-02 -- Initial draft
+-   2026-02-02 -- Added DOE framing, hooks, and architecture
+-   2026-02-03 -- Added PFXCore / PFXStudy split and license management
+-   2026-02-03 -- Added harvesting framework
+-   2026-02-03 -- Added data model
+-   2026-02-03 -- Added run intent and study indexing model
+-   2026-02-03 -- Added semantic DOE directory layout model
+-   2026-02-03 -- Added explicit study/run directory ownership model
+-   2026-02-03 -- Added pipeline.toml stage definition and leaf-run flow
+    subsection
+-   2026-02-03 -- Consolidated into unified master specification
+
+------------------------------------------------------------------------
+
+## 1. Project Overview
+
+### 1.1 Problem Statement
+
+Modern commercial EDA flows require
+complex, multi-layer configuration spanning shell scripts, Makefiles,
+tool launch wrappers, and Tcl runtime setup. Due to many factors, 
+configuration data is fragmented across environment variables, ad-hoc
+shell logic, embedded Tcl scripts, and Makefile rules. Over time, this
+leads to brittle, non-reproducible, and difficult-to-maintain
+infrastructure.
+
+In contemporary research and advanced methodology development, these
+flows are required to be embedded in large Design of Experiments (DOE) studies, where
+hundreds or thousands of parameterized runs are generated
+programmatically to explore timing, density, effort, library variants,
+and other design variables.
+
+Further, research goals often focus on technology or algorithmic questions
+which are unanticipated by "producton" flows, futher exacerbating the challenge
+of fragmented scripts, rules and variables. 
+
+Multiple frameworks have attempted to address these issues. From one perspective
+this work is just yet another flow management system. However, this work
+attempts to offer solutions to the following challenges:
+-   A standardized interface for RTL, constraint, and technology inputs
+-   Deterministic normalization of design data
+-   Integrated license-aware and compute-aware orchestration
+-   A regularized mechanism for harvesting results
+-   A structured mechanism for locating and tracking runs by experimental intent
+-   A consistent, meaningful directory structure reflecting DOE
+    structure
+-   A robust, explicit stage pipeline and artifact handoff contract
+    within each run directory
+
+PFXFlow is architected to address some of these problems through a unified configuration,
+orchestration, execution, harvesting, indexing, and pipeline framework
+composed of two major subsystems: PFXCore and PFXStudy.
+
+------------------------------------------------------------------------
+
+### 1.2 System Definition
+
+PFXFlow is composed of:
+
+-   **PFXCore**\
+    A headless execution kernel that validates, normalizes,
+    materializes, executes, and harvests individual runs.
+
+-   **PFXStudy**\
+    A study-level orchestration and user interface layer (CLI + future
+    GUI) that manages DOE workflows, directory layout, scheduling,
+    licensing, indexing, and aggregation.
+
+The user-facing interface is exposed through:
+
+    pfxflow <verb> [options]
+
+Where `<verb>` includes `study`, `run`, `validate`, and related
+commands.
+
+------------------------------------------------------------------------
+
+### 1.3 Goals
+
+-   G1: Provide a single authoritative TOML-based configuration format.
+-   G2: Implement PFXCore as a deterministic run compiler/executor.
+-   G3: Generate fully reproducible run directories.
+-   G4: Normalize all design and technology inputs.
+-   G5: Support large-scale DOE execution.
+-   G6: Centralize license management.
+-   G7: Provide extensible Tcl hooks.
+-   G8: Produce standardized run-level summaries.
+-   G9: Enable automated study-level aggregation.
+-   G10: Ensure strong schema validation.
+-   G11: Enable structured search and retrieval of runs by intent.
+-   G12: Provide deterministic, human-readable DOE directory
+    hierarchies.
+-   G13: Provide explicit stage pipelines with stable artifact handoff
+    between stages/tools.
+
+------------------------------------------------------------------------
+
+### 1.4 Non-Goals
+
+-   NG1: Full GUI implementation in v1.
+-   NG2: Replacement of Cadence tools.
+-   NG3: Cloud-native deployment.
+-   NG4: General-purpose optimization framework.
+-   NG5: Runtime discovery of unmanaged files.
+
+------------------------------------------------------------------------
+
+### 1.5 Success Criteria
+
+-   All runs are reproducible from frozen directories (modulo tool nondeterminism).
+-   All inputs are enumerated and validated.
+-   Studies of 100+ runs execute unattended.
+-   License and compute limits or restrictions are respected.
+-   Each run emits a machine-readable summary.
+-   Aggregated datasets require no ad-hoc parsing.
+-   Users can locate runs using semantic paths and queries.
+-   Stage-to-stage data handoff is deterministic and auditable within
+    each run directory.
+
+------------------------------------------------------------------------
+
+## 2. Users, Use Cases & Workflows
+
+### 2.1 Target Users
+
+-   Physical design engineers
+-   EDA researchers
+-   CAD infrastructure developers
+-   Methodology engineers
+
+------------------------------------------------------------------------
+
+### 2.2 Key Use Cases
+
+#### UC1: DOE Execution (PFXStudy)
+
+1.  User defines parameter sweep.
+2.  Study layout policy is defined.
+3.  PFXStudy creates study directory structure.
+4.  Templates and overlays are selected.
+5.  PFXStudy schedules jobs under license limits.
+6.  PFXCore executes run pipelines.
+7.  Results are indexed and aggregated.
+
+#### UC2: Single Run Debug (PFXCore)
+
+1.  User locates run via path or query.
+2.  User invokes `pfxflow run` or `pfxflow run --stage <x>`.
+3.  Stage prerequisites are enforced.
+4.  Stage is executed.
+5.  Outputs and metadata are inspected.
+
+#### UC3: Technology Evaluation
+
+Multiple technology variants are evaluated through overlays and
+harvested metrics.
+
+#### UC4: Flow Customization
+
+Users attach Tcl hooks at defined phases.
+
+#### UC5: Run Discovery
+
+Users browse directory hierarchies or query the study index.
+
+------------------------------------------------------------------------
+
+## 3. Architecture Overview
+
+### 3.1 High-Level Structure
+
+PFXFlow consists of:
+
+-   PFXStudy (CLI/GUI)
+-   PFXCore (Execution Kernel)
+-   Execution Substrate (Slurm, Cadence, etc.)
+
+Interaction:
+
+    User → PFXStudy → PFXCore → Tool Wrappers → Tools → Artifacts → Harvest → Index → PFXStudy
+
+------------------------------------------------------------------------
+
+### 3.2 PFXStudy Components
+
+-   Study Manager
+-   Template Catalog
+-   License Manager
+-   Scheduler
+-   Run Monitor
+-   Layout Manager
+-   Index Manager
+-   Aggregator
+-   Dataset Exporter
+
+------------------------------------------------------------------------
+
+### 3.3 PFXCore Components
+
+-   Config Composer
+-   Validator
+-   Design/Tech Normalizer
+-   Run Materializer
+-   Stage Runner (C++)
+-   Tool Wrappers (shell)
+-   Tcl Drivers (generated)
+-   Hook Executor
+-   Harvester Framework
+
+------------------------------------------------------------------------
+
+### 3.4 Canonical Study Directory Structure
+
+The study root directory is created and owned by PFXStudy.
+
+    <study_name>/
+      study.toml
+      pipeline.toml                 # optional per-study override
+      index/
+        runs.sqlite
+      logs/
+      exports/
+      templates/
+      runs/
+        <semantic DOE hierarchy>/
+
+Responsibilities:
+
+-   PFXStudy creates and manages this structure.
+-   PFXCore does not modify study-level metadata (except possibly via
+    index updates through PFXStudy interfaces).
+
+------------------------------------------------------------------------
+
+### 3.5 Canonical Run Directory Structure
+
+Run directories are allocated by PFXStudy and populated by PFXCore.
+
+    <study_name>/runs/<semantic path>/rNNN/
+      request.toml
+      run.toml
+      env.sh
+      config/                       # generated entrypoint scripts
+        pipeline_driver.tcl
+        tool_<stage>.tcl            # optional (stage-specific Tcl)
+      stages/
+        10_synth/
+          logs/
+          reports/
+          outputs/
+          status.json
+        20_init/
+        30_place/
+        40_cts/
+        50_route/
+        90_harvest/
+      current/                      # stable handoff links
+      results/
+        run_summary.json
+        run_summary.csv
+      meta/
+        run_id.txt
+        run_intent.json
+        provenance.json
+        inputs_manifest.json
+
+------------------------------------------------------------------------
+
+### 3.6 Artifact Ownership Model
+
+  Artifact                     Created By                      Purpose
+  ---------------------------- ------------------------------- -----------------------------
+  study.toml                   PFXStudy                        Study definition and layout
+  pipeline.toml                PFXStudy (or shipped default)   Stage DAG definition
+  request.toml                 PFXStudy                        Run request
+  run.toml                     PFXCore                         Frozen resolved config
+  env.sh                       PFXCore                         Environment capsule
+  config/pipeline_driver.tcl   PFXCore                         Entry Tcl / driver
+  stages/\*                    PFXCore                         Stage artifacts
+  current/\*                   PFXCore                         Canonical handoff links
+  run_summary.json             PFXCore                         Harvested metrics
+  runs.sqlite                  PFXStudy                        Run index
+  provenance.json              PFXCore                         Reproducibility data
+
+------------------------------------------------------------------------
+
+### 3.7 Leaf Run Flow and Pipeline Definition
+
+This subsection defines how PFXCore manages multi-tool, multi-stage
+execution within a single leaf run directory.
+
+#### 3.7.1 Overview
+
+A *run* is executed as a directed acyclic graph (DAG) of stages (e.g.,
+`synth → init → place → cts → route → harvest`). Each stage consumes
+canonical inputs and produces canonical outputs. Stages are executed by
+the PFXCore Stage Runner, which invokes tool wrappers and records status
+and manifests.
+
+Key properties:
+
+-   Stage definitions are explicit (no implicit ordering).
+-   Stage inputs/outputs are contract-defined.
+-   Stage execution is idempotent by default (no re-run unless `--force`
+    or missing outputs).
+-   Stage results are isolated in `stages/<NN_name>/`.
+-   Stable handoff uses `current/` symlinks.
+
+#### 3.7.2 pipeline.toml approach
+
+PFXFlow uses a TOML file to define the stage pipeline. There are two
+supported locations:
+
+-   **Default pipeline:** shipped with PFXCore (e.g.,
+    `share/pfxcore/pipeline_default.toml`)
+-   **Per-study pipeline override:** `<study_root>/pipeline.toml`
+    (optional)
+
+The stage runner loads pipeline definition in this precedence order:
+
+1.  `<run_dir>/pipeline.toml` (rare; for fully custom runs)
+2.  `<study_root>/pipeline.toml` (study-scoped override)
+3.  PFXCore default pipeline
+
+#### 3.7.3 pipeline.toml schema (v1)
+
+Example `pipeline.toml`:
+
+``` toml
+version = "1.0"
+
+[pipeline]
+name = "cadence_genus_innovus_v1"
+description = "Genus synth + Innovus init/place/cts/route + harvest"
+default_target = "harvest"
+
+# Global conventions used by the stage runner.
+[conventions]
+stages_dir = "stages"
+current_dir = "current"
+status_file = "status.json"
+
+# Wrappers are invoked as: <wrapper> <run_dir> <stage_name>
+[wrappers]
+genus = "pfx_genus_run"
+innovus = "pfx_innovus_run"
+harvest = "pfx_harvest_run"
+
+[[stage]]
+name = "synth"
+order = 10
+tool = "genus"
+wrapper = "genus"
+depends_on = []
+inputs = ["run.toml", "resolved_inputs/design/*", "resolved_inputs/tech/*"]
+outputs = [
+  "stages/10_synth/outputs/netlist.v",
+  "stages/10_synth/outputs/constraints.sdc"
+]
+exports = [
+  "current/netlist.v=stages/10_synth/outputs/netlist.v",
+  "current/constraints.sdc=stages/10_synth/outputs/constraints.sdc"
+]
+
+[[stage]]
+name = "init"
+order = 20
+tool = "innovus"
+wrapper = "innovus"
+depends_on = ["synth"]
+inputs = ["current/netlist.v", "current/constraints.sdc", "resolved_inputs/tech/*"]
+outputs = ["stages/20_init/outputs/design.enc"]
+exports = ["current/design.enc=stages/20_init/outputs/design.enc"]
+
+[[stage]]
+name = "place"
+order = 30
+tool = "innovus"
+wrapper = "innovus"
+depends_on = ["init"]
+inputs = ["current/design.enc"]
+outputs = ["stages/30_place/outputs/design.enc"]
+exports = ["current/design.enc=stages/30_place/outputs/design.enc"]
+
+[[stage]]
+name = "cts"
+order = 40
+tool = "innovus"
+wrapper = "innovus"
+depends_on = ["place"]
+inputs = ["current/design.enc"]
+outputs = ["stages/40_cts/outputs/design.enc"]
+exports = ["current/design.enc=stages/40_cts/outputs/design.enc"]
+
+[[stage]]
+name = "route"
+order = 50
+tool = "innovus"
+wrapper = "innovus"
+depends_on = ["cts"]
+inputs = ["current/design.enc"]
+outputs = ["stages/50_route/outputs/design.enc"]
+exports = ["current/design.enc=stages/50_route/outputs/design.enc"]
+
+[[stage]]
+name = "harvest"
+order = 90
+tool = "harvest"
+wrapper = "harvest"
+depends_on = ["route"]
+inputs = ["stages/**/reports/*", "stages/**/outputs/*"]
+outputs = ["results/run_summary.json", "results/run_summary.csv"]
+exports = []
+```
+
+Schema notes:
+
+-   `order` is used to name stage directories (`10_synth`, `20_init`,
+    etc.) and to provide stable ordering.
+-   `depends_on` defines the DAG edges (ordering + dependency
+    enforcement).
+-   `inputs` / `outputs` are used for validation and for determining
+    up-to-date status.
+-   `exports` defines the canonical handoff links created under
+    `current/`.
+
+#### 3.7.4 Stage Runner behavior (v1)
+
+The C++ stage runner operates with these rules:
+
+-   A stage is considered **complete** when:
+    -   `stages/<NN_name>/status.json` exists and indicates success, AND
+    -   all declared `outputs` exist.
+-   A stage is considered **runnable** when:
+    -   all `depends_on` stages are complete, AND
+    -   all declared `inputs` exist.
+-   Default behavior is **do not re-run** completed stages.
+-   `--force` re-runs a stage and (optionally) invalidates downstream
+    stages by deleting their `status.json` (v1 choice: conservative; do
+    not delete outputs unless configured).
+
+#### 3.7.5 Status recording
+
+Each stage writes `stages/<NN_name>/status.json` containing:
+
+-   stage name, order
+-   start/end timestamps
+-   wrapper command line
+-   tool version summary (best-effort)
+-   exit code and success boolean
+-   pointers to primary log/report files
+-   optional hashes of canonical outputs (future extension)
+
+#### 3.7.6 Tool wrapper contract
+
+Wrappers are responsible for:
+
+-   `cd` into run directory
+-   sourcing `env.sh`
+-   invoking the tool in batch mode with a single entry Tcl
+-   writing logs under `stages/<NN_name>/logs/`
+-   writing reports under `stages/<NN_name>/reports/`
+-   writing canonical outputs under `stages/<NN_name>/outputs/`
+-   returning non-zero on failure
+
+Wrappers do **not** manage dependencies; only the stage runner does.
+
+------------------------------------------------------------------------
+
+#### 3.6.1 User-Facing Design Specification
+
+Defined in `request.toml` and templates:
+
+``` toml
+[design]
+top = "top_module"
+rtl_type = "systemverilog"
+filelist = "rtl/files.f"
+include_dirs = ["rtl/include"]
+defines = ["SYNTH"]
+sdc_files = ["constraints/top.sdc"]
+blackboxes = ["mem_macro"]
+```
+
+#### 3.6.2 Filelist Semantics and Merge Policy
+
+PFXFlow standardizes RTL ingestion around an EDA-style filelist. The
+user may provide a `design.filelist` (recommended).
+`design.include_dirs` and `design.defines` are **additive** and are
+merged into a resolved filelist by PFXCore.
+
+The resolved filelist is the only filelist consumed by tools; it
+eliminates ambiguity between tool-specific command-line flags and user
+conventions.
+
+The filelist SHALL follow standard EDA conventions:
+
+-   Source file paths
+-   `+incdir+<path>` include directives
+-   `+define+<macro>` preprocessor definitions
+-   `-f <other.f>` nested filelists
+
+Example `files.f`:
+
+    +incdir+rtl/include
+    +define+USE_IP
+
+    -f common.f
+
+    rtl/top.sv
+    rtl/core.sv
+
+Relative paths are resolved relative to the filelist location.
+
+#### 3.4.3 Normalization Rules
+
+PFXCore SHALL:
+
+1.  Expand nested `-f` directives.
+2.  Resolve all paths to absolute paths.
+3.  Prepend generated `+incdir` and `+define` directives from TOML.
+4.  Validate top module.
+5.  Order entries deterministically.
+6.  Write canonical filelist to:
+
+```{=html}
+<!-- -->
+```
+    resolved_inputs/design/rtl/filelist.f
+
+All tools SHALL consume only the resolved filelist.
+
+#### 3.4.4 Canonical Design Layout
+
+    resolved_inputs/design/
+      rtl/
+        filelist.f
+        src/
+      constraints/
+        merged.sdc
+      config/
+        design_resolved.json
+
+#### 3.6.3 Normalization Rules
+
+PFXCore SHALL canonicalize all RTL and constraints into a run-local
+capsule.
+
+PFXCore SHALL:
+
+1.  Expand nested `-f` directives.
+2.  Resolve all paths to absolute paths.
+3.  Prepend generated `+incdir` and `+define` directives from TOML.
+4.  Validate top module.
+5.  Order entries deterministically.
+6.  Write canonical filelist to:
+
+```{=html}
+<!-- -->
+```
+    resolved_inputs/design/rtl/filelist.f
+
+All tools SHALL consume only the resolved filelist.
+
+#### 3.4.4 Canonical Design Layout
+
+    resolved_inputs/design/
+      rtl/
+        filelist.f
+        src/
+      constraints/
+        merged.sdc
+      config/
+        design_resolved.json
+
+#### 3.6.4 Canonical Design Layout
+
+Within `resolved_inputs/design/`:
+
+    resolved_inputs/design/
+      rtl/
+        filelist.f
+        src/                 # optional (copy mode)
+      constraints/
+        merged.sdc
+      config/
+        design_resolved.json
+
+Notes: - Copy vs symlink policy is configurable (v1 default: symlink for
+performance; copy for 'frozen' runs). - `constraints/merged.sdc` is
+produced deterministically from `design.sdc_files` in the order
+specified.
+
+#### 3.6.5 Design Manifest
+
+`meta/inputs_manifest.json` SHALL include design inputs (RTL, filelists,
+SDCs) with source paths, run-local paths, and basic metadata (size,
+mtime, optional hash).
+
+------------------------------------------------------------------------
+
+#### 3.7.1 Technology Bundle Concept
+
+All technology data SHALL be referenced through named bundles:
+
+``` toml
+[tech]
+bundle = "GENERIC_ADV_NODE_V1"
+corner = "tt"
+```
+
+Bundles are defined in a managed catalog external to studies.
+
+#### 3.7.2 Bundle Definition Schema
+
+Bundles are stored in a managed catalog (site-controlled) and expanded
+by PFXCore into explicit file sets. Technology references remain
+anonymous in this document.
+
+Bundle definitions are stored in:
+
+    $PFX_TECH_CATALOG/bundles/<name>.toml
+
+Example bundle:
+
+``` toml
+[bundle]
+name = "GENERIC_ADV_NODE_V1"
+version = "2026Q1"
+
+[timing]
+liberty = ["lib/ss.lib", "lib/tt.lib", "lib/ff.lib"]
+
+[physical]
+cell_lef  = ["lef/cells.lef"]
+macro_lef = ["lef/macros.lef"]
+tech_lef  = "lef/tech.lef"
+
+[routing]
+cadence_tech = "route/tech.lef"
+synopsys_tf  = "route/tech.tf"
+
+[extraction]
+qrc_tech   = "pex/qrcTech.tch"
+starrc_tech = "pex/starrc.tch"
+
+[mmmc]
+views = "mmmc/views.tcl"
+
+[metadata]
+units = "ps/um"
+process = "anonymous"
+```
+
+#### 3.5.3 Normalization Rules
+
+PFXCore SHALL:
+
+1.  Load bundle definition.
+2.  Resolve all referenced files.
+3.  Validate required components.
+4.  Normalize units.
+5.  Generate tool-compatible views.
+6.  Populate resolved directories.
+
+#### 3.5.4 Canonical Technology Layout
+
+    resolved_inputs/tech/
+      liberty/
+      lef/
+      route/
+      pex/
+      mmmc/
+      config/
+        tech_resolved.json
+
+#### 3.7.3 Normalization Rules
+
+PFXCore SHALL expand the bundle into a run-local `resolved_inputs/tech/`
+capsule and validate all required components.
+
+PFXCore SHALL:
+
+1.  Load bundle definition.
+2.  Resolve all referenced files.
+3.  Validate required components.
+4.  Normalize units.
+5.  Generate tool-compatible views.
+6.  Populate resolved directories.
+
+#### 3.5.4 Canonical Technology Layout
+
+    resolved_inputs/tech/
+      liberty/
+      lef/
+      route/
+      pex/
+      mmmc/
+      config/
+        tech_resolved.json
+
+#### 3.7.4 Canonical Technology Layout
+
+Within `resolved_inputs/tech/`:
+
+    resolved_inputs/tech/
+      liberty/
+      lef/
+        tech.lef
+        cells.lef
+        macros.lef
+      route/
+        cadence_tech.lef
+        synopsys.tf
+      pex/
+        qrcTech.tch
+        starrc.tch
+      mmmc/
+        views.tcl
+      config/
+        tech_resolved.json
+
+Notes: - The *router configuration* component is explicitly represented
+under `route/`. - The *PEX tech* component is explicitly represented
+under `pex/`.
+
+#### 3.7.5 Technology Manifest
+
+`meta/inputs_manifest.json` SHALL include technology inputs (LEF,
+liberty, route tech files, extraction tech files, MMMC) with source
+paths, run-local paths, and basic metadata (size, mtime, optional hash).
+
+## 4. Data Model and Core Abstractions
+
+### 4.1 Overview
+
+This section defines the logical data objects used throughout PFXFlow.
+All persistent artifacts are derived from these models.
+
+------------------------------------------------------------------------
+
+### 4.2 Study Model
+
+  Field             Type          Description
+  ----------------- ------------- ------------------------
+  study_id          string        Unique ID
+  root_dir          path          Root directory
+  variables         map           Sweep definitions
+  layout            StudyLayout   Directory policy
+  runs              list          Run IDs
+  license_profile   string        License policy
+  status            enum          active/complete/failed
+
+------------------------------------------------------------------------
+
+### 4.3 StudyLayout Model
+
+  Field            Type             Description
+  ---------------- ---------------- --------------------
+  path_variables   list\[string\]   Variables in path
+  formatters       map              Value format rules
+  base_dir         string           Root name
+  repeat_policy    enum             suffix/timestamp
+
+------------------------------------------------------------------------
+
+### 4.4 Run Model
+
+  Field      Type        Description
+  ---------- ----------- -----------------------------
+  run_id     string      Unique ID
+  study_id   string      Parent
+  run_dir    path        Location
+  vars       map         DOE variables
+  intent     RunIntent   Semantic descriptor
+  status     enum        pending/running/done/failed
+
+------------------------------------------------------------------------
+
+### 4.5 RunIntent Model
+
+  Field       Type     Description
+  ----------- -------- ------------------------
+  vars        map      DOE variables
+  tech_tags   map      Library/VT identifiers
+  templates   list     Template lineage
+  design_id   string   Design identifier
+  user_tags   list     Optional annotations
+
+Serialized as `meta/run_intent.json`.
+
+------------------------------------------------------------------------
+
+### 4.6 Configuration Model (CFG)
+
+  Field        Type          Description
+  ------------ ------------- -------------
+  design       DesignSpec    RTL/SDC
+  tech         TechSpec      Technology
+  tools        ToolSpec      Tool params
+  hooks        HookSpec      Hooks
+  harvesting   HarvestSpec   Metrics
+  metadata     map           User info
+
+------------------------------------------------------------------------
+
+### 4.7 DesignSpec
+
+  Field          Type           Description
+  -------------- -------------- -----------------------
+  rtl_files      list\[path\]   RTL list
+  rtl_type       enum           verilog/systemverilog
+  include_dirs   list           Includes
+  defines        list           Defines
+  sdc_files      list           Constraints
+  blackboxes     list           Abstract modules
+
+------------------------------------------------------------------------
+
+### 4.8 TechSpec
+
+  Field           Type           Description
+  --------------- -------------- -------------
+  liberty_files   list\[path\]   Libraries
+  tech_lef        path           Tech LEF
+  cell_lefs       list\[path\]   Cell LEFs
+  macro_lefs      list\[path\]   Macros
+  rc_models       list\[path\]   RC data
+  corners         list           MMMC
+
+------------------------------------------------------------------------
+
+### 4.9 ToolSpec
+
+  Field       Type   Description
+  ----------- ------ ----------------
+  genus       map    Genus params
+  innovus     map    Innovus params
+  env         map    Env overrides
+  resources   map    CPU/Mem hints
+
+------------------------------------------------------------------------
+
+### 4.10 HookSpec
+
+  Field      Type           Description
+  ---------- -------------- ---------------
+  phase      string         Phase
+  scripts    list\[path\]   Scripts
+  on_error   enum           fail/continue
+
+------------------------------------------------------------------------
+
+### 4.11 HarvestSpec
+
+  Field     Type     Description
+  --------- -------- ----------------
+  profile   string   Profile
+  metrics   list     Metrics
+  outputs   list     Formats
+  version   string   Schema version
+
+------------------------------------------------------------------------
+
+### 4.12 Provenance Model
+
+  Field               Type        Description
+  ------------------- ----------- --------------
+  config_hash         string      Config hash
+  input_hashes        map         File hashes
+  hook_hashes         map         Hook hashes
+  tool_versions       map         Versions
+  harvester_version   string      Harvester ID
+  host                string      Host
+  timestamp           timestamp   Time
+
+------------------------------------------------------------------------
+
+### 4.13 Study Index Model
+
+  Field      Type     Description
+  ---------- -------- ---------------
+  run_id     string   Run ID
+  study_id   string   Study
+  intent     json     Run intent
+  status     enum     Run status
+  path       path     Run directory
+
+------------------------------------------------------------------------
+
+### 4.14 Representation Strategy
+
+-   In-memory: Strongly typed C++ classes
+-   On-disk: TOML, JSON, CSV, SQLite
+-   All formats versioned
+
+------------------------------------------------------------------------
+
+### 4.15 Compatibility
+
+-   Additive changes preferred
+-   Deprecation supported
+-   Migration tools required for breaking changes
+
+------------------------------------------------------------------------
+
+### 4.16 Implementation Mapping
+
+  ---------------------------------------------------------------------
+  Layer                          Objects
+  ------------------------------ --------------------------------------
+  PFXStudy                       Study, StudyLayout, Run, StudyIndex
+
+  PFXCore                        CFG, DesignSpec, TechSpec,
+                                 HarvestSpec, RunIntent, StageRunner
+
+  Tcl                            CFG, VARS, PFX
+
+  Storage                        Manifests, Index
+  ---------------------------------------------------------------------

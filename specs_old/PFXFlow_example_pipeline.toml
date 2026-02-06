@@ -1,0 +1,84 @@
+version = "1.0"
+
+[pipeline]
+name = "cadence_genus_innovus_v1"
+description = "Genus synth + Innovus init/place/cts/route + harvest"
+default_target = "harvest"
+
+# Global conventions used by the stage runner.
+[conventions]
+stages_dir = "stages"
+current_dir = "current"
+status_file = "status.json"
+
+# Wrappers are invoked as: <wrapper> <run_dir> <stage_name>
+[wrappers]
+genus = "pfx_genus_run"
+innovus = "pfx_innovus_run"
+harvest = "pfx_harvest_run"
+
+[[stage]]
+name = "synth"
+order = 10
+tool = "genus"
+wrapper = "genus"
+depends_on = []
+inputs = ["run.toml", "resolved_inputs/design/*", "resolved_inputs/tech/*"]
+outputs = [
+  "stages/10_synth/outputs/netlist.v",
+  "stages/10_synth/outputs/constraints.sdc"
+]
+exports = [
+  "current/netlist.v=stages/10_synth/outputs/netlist.v",
+  "current/constraints.sdc=stages/10_synth/outputs/constraints.sdc"
+]
+
+[[stage]]
+name = "init"
+order = 20
+tool = "innovus"
+wrapper = "innovus"
+depends_on = ["synth"]
+inputs = ["current/netlist.v", "current/constraints.sdc", "resolved_inputs/tech/*"]
+outputs = ["stages/20_init/outputs/design.enc"]
+exports = ["current/design.enc=stages/20_init/outputs/design.enc"]
+
+[[stage]]
+name = "place"
+order = 30
+tool = "innovus"
+wrapper = "innovus"
+depends_on = ["init"]
+inputs = ["current/design.enc"]
+outputs = ["stages/30_place/outputs/design.enc"]
+exports = ["current/design.enc=stages/30_place/outputs/design.enc"]
+
+[[stage]]
+name = "cts"
+order = 40
+tool = "innovus"
+wrapper = "innovus"
+depends_on = ["place"]
+inputs = ["current/design.enc"]
+outputs = ["stages/40_cts/outputs/design.enc"]
+exports = ["current/design.enc=stages/40_cts/outputs/design.enc"]
+
+[[stage]]
+name = "route"
+order = 50
+tool = "innovus"
+wrapper = "innovus"
+depends_on = ["cts"]
+inputs = ["current/design.enc"]
+outputs = ["stages/50_route/outputs/design.enc"]
+exports = ["current/design.enc=stages/50_route/outputs/design.enc"]
+
+[[stage]]
+name = "harvest"
+order = 90
+tool = "harvest"
+wrapper = "harvest"
+depends_on = ["route"]
+inputs = ["stages/**/reports/*", "stages/**/outputs/*"]
+outputs = ["results/run_summary.json", "results/run_summary.csv"]
+exports = []

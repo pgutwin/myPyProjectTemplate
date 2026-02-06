@@ -1,0 +1,17 @@
+{
+  "stage": "place",
+  "order": 30,
+  "start_time": "2026-02-05T13:14:03Z",
+  "end_time": "2026-02-05T13:18:57Z",
+  "exit_code": 137,
+  "success": false,
+  "primary_log": "place.log",
+  "outputs": [
+    "outputs/design_placed.enc"
+  ],
+  "missing_outputs": [
+    "outputs/design_placed.enc"
+  ],
+  "error_type": "tool_crash",
+  "message": "Innovus terminated unexpectedly (SIGKILL)"
+}

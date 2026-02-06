@@ -1,0 +1,14 @@
+{
+  "stage": "synth",
+  "order": 10,
+  "start_time": "2026-02-05T12:01:15Z",
+  "end_time": "2026-02-05T12:07:42Z",
+  "exit_code": 0,
+  "success": true,
+  "primary_log": "synth.log",
+  "outputs": [
+    "outputs/netlist.v",
+    "outputs/constraints.sdc"
+  ],
+  "message": "Stage completed successfully"
+}
