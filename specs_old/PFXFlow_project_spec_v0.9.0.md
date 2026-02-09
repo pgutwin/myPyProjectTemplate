@@ -1,0 +1,1106 @@
+### Change Log
+
+-   2026-02-02 -- Initial draft
+-   2026-02-02 -- Added DOE framing, hooks, and architecture
+-   2026-02-03 -- Added PFXCore / PFXStudy split and license management
+-   2026-02-03 -- Added harvesting framework
+-   2026-02-03 -- Added data model
+-   2026-02-03 -- Added run intent and study indexing model
+-   2026-02-03 -- Added semantic DOE directory layout model
+-   2026-02-03 -- Added explicit study/run directory ownership model
+-   2026-02-03 -- Added pipeline.toml stage definition and leaf-run flow
+-   2026-02-03 -- Consolidated into unified master specification
+-   2026-02-04 -- Defined Tier-1 execution semantics (freshness, grouped
+-   2026-02-04 -- Tier-2 policies: tech catalog governance, core metrics
+-   2026-02-04 -- Reorganized section 3 numbering; fixed duplicate
+-   2026-02-04 -- Clarified study-root pipeline.toml requirement and
+-   2026-02-04 -- Added explicit template syntax and semantics
+    (placeholder grammar, typing rules, escaping, inheritance merge
+    semantics, reserved variables) override precedence; defined
+    templates; fixed semantic path terminology; cleaned formatting
+    artifacts and section numbering
+-   2026-02-04 -- Added formal Template Processing Model (syntax,
+    expansion, inheritance, and lifecycle); clarified template
+    production/consumption; bumped to v0.8.0 design sections, removed
+    stray HTML artifacts; clarified study-root pipeline.toml with
+    per-run overrides harvesting, per-study append-only index w/ CLI
+    filters, single-parent templates (no pipeline override), per-study
+    resource limits, schema migration; formalized `<semantic path>`
+    stages, ordering, failure, environment ownership) subsection;
+    clarified working directory for tool execution;
+-   2026-02-05 -- Added scripts/ directory to run layout; removed
+    wrappers model; introduced stage_launch.sh execution model; expanded
+    pipeline.toml exec semantics (v0.8.6)
+-   2026-02-05 -- Corrected pipeline.toml example to match wrapper-free
+    exec.argv model (v0.8.6)
+-   2026-02-05 -- Rewrote Section 3.7.2 with normative pipeline.toml
+    syntax and semantics; moved example to non-normative role (v0.8.7)
+-   2026-02-05 -- Removed directory and current_dir convention;
+    eliminated related stage outputs semantics to avoid confusion with
+    working directory (v0.8.8)
+-   2026-02-05 -- Restored and formalized variable propagation; defined
+    stage_launch.sh contract; added run.toml and status.json schemas;
+    clarified logging and execution semantics (v0.9.0)
+
+------------------------------------------------------------------------
+
+## 1. Project Overview
+
+### 1.1 Problem Statement
+
+Modern commercial EDA flows require complex, multi-layer configuration
+spanning shell scripts, Makefiles, stage launch scripts, and Tcl runtime
+setup. Due to many factors, configuration data is fragmented across
+environment variables, ad-hoc shell logic, embedded Tcl scripts, and
+Makefile rules. Over time, this leads to brittle, non-reproducible, and
+difficult-to-maintain infrastructure.
+
+In contemporary research and advanced methodology development, these
+flows are required to be embedded in large Design of Experiments (DOE)
+studies, where hundreds or thousands of parameterized runs are generated
+programmatically to explore timing, density, effort, library variants,
+and other design variables.
+
+Further, research goals often focus on technology or algorithmic
+questions which are unanticipated by "producton" flows, futher
+exacerbating the challenge of fragmented scripts, rules and variables.
+
+Multiple frameworks have attempted to address these issues. From one
+perspective this work is just yet another flow management system.
+However, this work attempts to offer solutions to the following
+challenges: - A standardized interface for RTL, constraint, and
+technology inputs - Deterministic normalization of design data -
+Integrated license-aware and compute-aware orchestration - A regularized
+mechanism for harvesting results - A structured mechanism for locating
+and tracking runs by experimental intent - A consistent, meaningful
+directory structure reflecting DOE structure - A robust, explicit stage
+pipeline and artifact handoff contract within each run directory
+
+PFXFlow is architected to address some of these problems through a
+unified configuration, orchestration, execution, harvesting, indexing,
+and pipeline framework composed of two major subsystems: PFXCore and
+PFXStudy.
+
+------------------------------------------------------------------------
+
+### 1.2 System Definition
+
+PFXFlow is composed of:
+
+-   **PFXCore**\
+    A headless execution kernel that validates, normalizes,
+    materializes, executes, and harvests individual runs.
+
+-   **PFXStudy**\
+    A study-level orchestration and user interface layer (CLI + future
+    GUI) that manages DOE workflows, directory layout, scheduling,
+    licensing, indexing, and aggregation.
+
+The user-facing interface is exposed through:
+
+pfxflow `<verb>`{=html} \[options\]
+
+Where `<verb>` includes `study`, `run`, `validate`, and related
+commands.
+
+------------------------------------------------------------------------
+
+### 1.3 Goals
+
+-   G1: Provide a single authoritative TOML-based configuration format.
+-   G2: Implement PFXCore as a deterministic run compiler/executor.
+-   G3: Generate fully reproducible run directories.
+-   G4: Normalize all design and technology inputs.
+-   G5: Support large-scale DOE execution.
+-   G6: Centralize license management.
+-   G7: Provide extensible Tcl hooks.
+-   G8: Produce standardized run-level summaries.
+-   G9: Enable automated study-level aggregation.
+-   G10: Ensure strong schema validation.
+-   G11: Enable structured search and retrieval of runs by intent.
+-   G12: Provide deterministic, human-readable DOE directory
+    hierarchies.
+-   G13: Provide explicit stage pipelines with stable artifact handoff
+    between stages/tools.
+
+------------------------------------------------------------------------
+
+### 1.4 Non-Goals
+
+-   NG1: Full GUI implementation in v1.
+-   NG2: Replacement of Cadence tools.
+-   NG3: Cloud-native deployment.
+-   NG4: General-purpose optimization framework.
+-   NG5: Runtime discovery of unmanaged files.
+
+------------------------------------------------------------------------
+
+### 1.5 Success Criteria
+
+-   All runs are reproducible from frozen directories (modulo tool
+    nondeterminism).
+-   All inputs are enumerated and validated.
+-   Studies of 100+ runs execute unattended.
+-   License and compute limits or restrictions are respected.
+-   Each run emits a machine-readable summary.
+-   Aggregated datasets require no ad-hoc parsing.
+-   Users can locate runs using semantic paths and queries.
+-   Stage-to-stage data handoff is deterministic and auditable within
+    each run directory.
+
+------------------------------------------------------------------------
+
+## 2. Users, Use Cases & Workflows
+
+### 2.1 Target Users
+
+-   Physical design engineers
+-   EDA researchers
+-   CAD infrastructure developers
+-   Methodology engineers
+
+------------------------------------------------------------------------
+
+### 2.2 Key Use Cases
+
+#### UC1: DOE Execution (PFXStudy)
+
+1.  User defines parameter sweep.
+2.  Study layout policy is defined.
+3.  PFXStudy creates study directory structure.
+4.  Templates and overlays are selected.
+5.  PFXStudy schedules jobs under license limits.
+6.  PFXCore executes run pipelines.
+7.  Results are indexed and aggregated.
+
+#### UC2: Single Run Debug (PFXCore)
+
+1.  User locates run via path or query.
+2.  User invokes `pfxflow run` or `pfxflow run --stage <x>`.
+3.  Stage prerequisites are enforced.
+4.  Stage is executed.
+5.  Outputs and metadata are inspected.
+
+#### UC3: Technology Evaluation
+
+Multiple technology variants are evaluated through overlays and
+harvested metrics.
+
+#### UC4: Flow Customization
+
+Users attach Tcl hooks at defined phases.
+
+#### UC5: Run Discovery
+
+Users browse directory hierarchies or query the study index.
+
+------------------------------------------------------------------------
+
+## 3. Architecture Overview
+
+### 3.1 High-Level Structure
+
+PFXFlow consists of:
+
+-   PFXStudy (CLI/GUI)
+-   PFXCore (Execution Kernel)
+-   Execution Substrate (Slurm, Cadence, etc.)
+
+Interaction:
+
+User → PFXStudy → PFXCore → Tool Wrappers → Tools → Artifacts → Harvest
+→ Index → PFXStudy
+
+------------------------------------------------------------------------
+
+### 3.2 PFXStudy Components
+
+-   Study Manager
+-   Template Catalog
+-   License Manager
+-   Scheduler
+-   Run Monitor
+-   Layout Manager
+-   Index Manager
+-   Aggregator
+-   Dataset Exporter
+
+------------------------------------------------------------------------
+
+### 3.3 PFXCore Components
+
+-   Config Composer
+-   Validator
+-   Design/Tech Normalizer
+-   Run Materializer
+-   Stage Runner (C++)
+-   Tool Wrappers (shell)
+-   Tcl Drivers (generated)
+-   Hook Executor
+-   Harvester Framework
+
+------------------------------------------------------------------------
+
+### 3.4 Canonical Study Directory Structure
+
+The study root directory is created and owned by PFXStudy.
+
+`<study_name>`{=html}/ study.toml pipeline.toml \# required (study-wide
+pipeline) index/ runs.sqlite logs/ stage outputs/ templates/
+
+**Template definition (v1):**
+
+-   A *template* is a reusable TOML fragment used by PFXStudy to
+    generate run-specific configuration (most commonly `run.toml` and
+    `request.toml`) for many runs in a study.
+-   Templates live under `<study_root>/templates/` and are referenced by
+    name from `study.toml`.
+-   Templates may declare a single parent template to inherit defaults
+    and override specific fields.
+
+**Template inheritance policy (v1):**
+
+-   Templates may inherit from **a single parent template**.
+
+-   Override precedence is parent → child (child values override parent
+    values).
+
+-   Templates SHALL NOT redefine the pipeline in v1 (pipeline selection
+    is controlled at the study level).
+
+#### 3.4.2 Template Processing Model (v1)
+
+This subsection defines the **syntax** and **semantics** of templates
+used by PFXStudy to generate per-run TOML inputs.
+
+**Key rule:** templates are consumed only by **PFXStudy**. **PFXCore
+never parses templates**; it consumes only resolved TOML (`run.toml`,
+`request.toml`, etc.).
+
+##### 3.4.2.1 Template files and ownership
+
+-   Templates SHALL be stored under:
+
+``` text
+<study_root>/templates/
+```
+
+-   Templates SHALL be versioned with the study (or with a higher-level
+    repo if the study is generated from a catalog).
+
+-   Templates are typically authored by flow architects and advanced
+    users.
+
+-   Templates are treated as *inputs* to study generation. Changing a
+    template does not retroactively change previously generated run
+    directories unless the study is explicitly regenerated.
+
+##### 3.4.2.2 Template is valid TOML + placeholders
+
+-   A template SHALL be a valid TOML document *except* for placeholder
+    tokens.
+-   Placeholders follow the `${var_name}` form.
+-   Variable names use `[A-Za-z0-9_]+` and are case-sensitive.
+
+**Placeholder grammar (v1):**
+
+``` text
+|placeholder := "${" var_name [ " | " default ] "}"|
+var_name := [A-Za-z0-9_]+
+default := any sequence of characters not containing "}" (interpreted using the same typing rules as substitution)
+```
+
+Examples:
+
+-   `${density}`
+|-   `${clock_ps | 320}`|
+-   `"${design_name}"`
+
+##### 3.4.2.3 Typing rules (TOML-safe substitution)
+
+PFXStudy performs substitution with **TOML-aware typing** to avoid
+"stringly typed" configs.
+
+-   If a placeholder appears **inside a TOML string** (between quotes),
+    the substituted value is inserted as a string.
+-   Example: `name = "${design_name}"`
+-   If a placeholder appears **outside quotes**, the substituted value
+    is inserted as a TOML literal.
+-   Numbers remain numbers, booleans remain booleans, arrays remain
+    arrays, etc.
+-   Example: `density = ${density}` → `density = 0.55`
+-   PFXStudy SHALL validate that the resulting file parses as TOML after
+    substitution.
+
+**Supported literal types for unquoted substitution (v1):**
+
+-   integer: `320`
+-   float: `0.55`
+|-   boolean: `true | false`|
+-   string (as a TOML string literal): `"foo"` (note: quotes required in
+    the substituted value if unquoted placeholder)
+-   array: `[1, 2, 3]`, `["a", "b"]`
+-   inline table: `{ key = "val", n = 3 }`
+
+**Rule of thumb:** if you want a non-string type, keep the placeholder
+unquoted and ensure the bound value is representable as a TOML literal.
+
+##### 3.4.2.4 Escaping rules
+
+-   To emit a literal `${...}` sequence without substitution, templates
+    MAY escape `$` as `$$`.
+-   Example: `note = "$${not_a_var}"` → `note = "${not_a_var}"`
+
+##### 3.4.2.5 Binding sources and reserved variables
+
+Variables are bound by PFXStudy from:
+
+1.  DOE axes in `study.toml`
+2.  Study metadata (`study_name`, `pipeline_name`, `tech_bundle`, etc.)
+3.  Run metadata (assigned by PFXStudy during run instantiation)
+
+**Reserved variables (v1):**
+
+-   `study_name`
+-   `run_id` (opaque stable identifier)
+-   `run_seq` (monotonic integer within the study)
+-   `semantic_path` (relative to `<study_root>/runs/`)
+-   `created_utc` (timestamp)
+
+Unbound variables are a **fatal** template error.
+
+##### 3.4.2.6 Inheritance and merge semantics
+
+Templates MAY declare a single parent template using a top-level key:
+
+``` toml
+parent = "base_run.toml"
+```
+
+**Inheritance semantics (v1):**
+
+-   PFXStudy loads the parent template, then deep-merges the child
+    template.
+-   Merge rules:
+-   TOML tables: **deep-merge**, child keys override parent keys.
+-   Scalars: **replace** (child overrides parent).
+-   Arrays: **replace** (no concatenation in v1).
+-   Inheritance is resolved **before** placeholder substitution.
+-   Cycles are forbidden and cause validation failure.
+
+##### 3.4.2.7 Expansion algorithm (normative)
+
+For each run in a study, PFXStudy SHALL:
+
+1.  Select the template(s) referenced by `study.toml` (e.g., run
+    template, request template).
+2.  Resolve inheritance (single-parent chain), producing a single merged
+    template document.
+3.  Bind variables from DOE axes + reserved/system fields.
+4.  Perform placeholder substitution (with escaping rules).
+5.  Parse the result as TOML; fail if invalid.
+6.  Write the resolved TOML into the run directory (e.g.,
+    `<run_dir>/run.toml`, `<run_dir>/request.toml`).
+7.  Record the template identity (template filename + optional hash) in
+    the run metadata for provenance.
+
+##### 3.4.2.8 Consumption by PFXCore
+
+-   PFXCore consumes only resolved TOML in run directories.
+-   PFXCore SHALL treat resolved TOML as immutable inputs for the run.
+
+Responsibilities:
+
+-   PFXStudy creates and manages this structure.
+-   PFXCore does not modify study-level metadata (except possibly via
+    index updates through PFXStudy interfaces).
+
+------------------------------------------------------------------------
+
+#### 3.4.1 `<semantic path>`{=html} definition (v1)
+
+PFXFlow uses a **semantic directory hierarchy** so that users can locate
+runs by experimental intent without consulting the run index.
+
+A `<semantic path>` is a relative path rooted at the study's `runs/`
+directory that encodes the DOE variable assignments for a run.
+
+**Grammar (conceptual):**
+
+`<semantic path>`{=html} := `<axis_dir>`{=html}+ "/" `<run_leaf>`{=html}
+`<axis_dir>`{=html} := `<axis_name>`{=html} "=" `<axis_value>`{=html}
+`<run_leaf>`{=html} := "r" `<run_seq>`{=html} \["\_\_"
+`<short_tag>`{=html}\]
+
+**Rules (v1):**
+
+-   Each DOE axis contributes exactly one `axis_dir` segment of the form
+    `name=value`.
+-   Axis order is defined by `study.toml` (the DOE layout definition).
+    The order must be stable for the lifetime of the study.
+-   `axis_name` uses `[A-Za-z0-9_]+`.
+-   `axis_value` uses a restricted safe subset `[A-Za-z0-9._+-]+` and
+    MUST NOT contain `/`.
+-   If a value contains other characters, PFXStudy SHALL encode it (v1:
+    percent-encoding) before constructing the path.
+-   The final directory is always a run leaf directory beginning with
+    `r` followed by a monotonically increasing sequence number (`r0001`,
+    `r0002`, ...).
+-   The run leaf enables multiple replications for identical axis values
+    without changing the semantic meaning of parent directories.
+-   The run index (`index/`) maps `run_id` ↔ `<semantic path>` for
+    discovery and tooling, but semantic paths remain the primary
+    user-facing locator.
+
+**Example:**
+
+For a study named `den_sweep` with axis `density ∈ {0.50, 0.55, 0.60}`:
+
+density=0.50/r0001/ density=0.55/r0002/
+
+For a 2D sweep with `clock_ps` and `density`:
+
+clock_ps=320/density=0.50/r0042/
+
+### 3.5 Canonical Run Directory Structure
+
+Run directories are allocated by PFXStudy and populated by PFXCore.
+
+`<study_name>`{=html}/runs/`<semantic path>`{=html}/ request.toml
+run.toml env.sh config/ \# generated config and drivers scripts/ \# tool
+control Tcl (provided by PFXStudy) pipeline_driver.tcl
+tool\_`<stage>`{=html}.tcl \# optional (stage-specific Tcl) stages/
+10_synth/ logs/ reports/ outputs/ status.json 20_init/ 30_place/ 40_cts/
+50_route/ 90_harvest/ \# stable handoff links results/ run_summary.json
+run_summary.csv meta/ run_id.txt run_intent.json provenance.json
+inputs_manifest.json
+
+#### 3.5.1 Current Working Directories for Tool exeuction
+
+The current working directory for a tool exeuction will be the stage
+step. For example, in the above directory example, the invocation and
+running of the synthesis step will use "stages/10_synth" as the current
+working directory. All file references will be relative to this
+location.
+
+------------------------------------------------------------------------
+
+### 3.6 Artifact Ownership Model
+
+  Artifact Created By Purpose                     
+  ------------------------------- --------------- -------------
+  study.toml PFXStudy Study def   inition and l   ayout
+  pipeline.toml PFXStudy Stage    DAG definitio   n
+  request.toml PFXStudy Run req   uest            
+  run.toml PFXCore Frozen resol   ved config      
+  env.sh PFXCore Environment ca   psule           
+  config/pipeline_driver.tcl PF   XCore Entry T   cl / driver
+  stages/\* PFXCore Stage artif   acts            
+  PFXCore Canonical handoff lin   ks              
+  run_summary.json PFXCore Harv   ested metrics   
+  runs.sqlite PFXStudy Run inde   x               
+  provenance.json PFXCore Repro   ducibility da   ta
+
+------------------------------------------------------------------------
+
+### 3.7 Leaf Run Flow and Pipeline Definition
+
+This subsection defines how PFXCore manages multi-tool, multi-stage
+execution within a single leaf run directory.
+
+#### 3.7.1 Overview
+
+A *run* is executed as a directed acyclic graph (DAG) of stages (e.g.,
+`synth → init → place → cts → route → harvest`). Each stage consumes
+canonical inputs and produces canonical outputs. Stages are executed by
+the PFXCore Stage Runner, which invokes stage launch scripts and records
+status and manifests.
+
+Key properties:
+
+-   Stage definitions are explicit (no implicit ordering).
+-   Stage inputs/outputs are contract-defined.
+-   Stage execution is idempotent by default (no re-run unless `--force`
+    or missing outputs).
+-   Stage results are isolated in `stages/<NN_name>/`.
+-   Stable handoff uses \` symlinks.
+
+#### 3.7.2 pipeline.toml schema (v1)
+
+This section defines the normative syntax and semantics of
+`pipeline.toml`. All v1-compliant implementations SHALL conform to this
+schema. Examples are illustrative and non-normative.
+
+### 3.7.2.1 File Structure
+
+A `pipeline.toml` file SHALL contain:
+
+-   One `[pipeline]` table.
+-   Zero or one `[conventions]` table.
+-   One or more `[[stage]]` tables.
+
+### 3.7.2.2 \[pipeline\] Table
+
+Required fields:
+
+  Field Ty   pe Descri   ption
+  ---------- ----------- ----------------
+  name str   ing Pipel   ine identifier
+
+Optional fields:
+
+  Field Type Descri   ption       
+  ------------------- ----------- ---------------------------------
+  description strin   g Human-r   eadable description
+  default_target st   ring Defa   ult terminal stage name
+  schema_version st   ring Pipe   line schema version (default 1)
+
+### 3.7.2.3 \[conventions\] Table (Optional)
+
+  ----------------------------------------------------------------------
+  Field Type     ult      iption          
+  Defa           Descr                    
+  -------------- -------- --------------- ------------------------------
+  stages_dir     ng       s" Stage        ry root
+  stri           "stage   directo         
+
+  current_dir    ing      ent" Export     ctory
+  str            "curr    dire            
+
+  status_file    ing      us.json" Stage  tatus filename
+  str            "stat    s               
+  ----------------------------------------------------------------------
+
+### 3.7.2.4 \[\[stage\]\] Tables
+
+Each pipeline SHALL define one or more stages.
+
+Required fields:
+
+  Field Ty   pe Descri   ption
+  ---------- ----------- -----------------
+  name str   ing Uniqu   e stage name
+  order in   t Strict    execution order
+
+Optional fields:
+
+  Field Type De    fault Descripti    on            
+  ---------------- ------------------ ------------- --------------------
+  depends_on ar    ray\[str\] \[\]    Stage dep     endency list
+  inputs array\\   \[str\] \[\] Inp   ut file pa    tterns
+  outputs array    \[str\] \[\] De    clared out    put paths
+  stage outputs    array\[str\] \\    \[\] Export   mappings (dst=src)
+
+Stage names SHALL be unique. Order values SHALL be unique and
+increasing.
+
+### 3.7.2.5 \[stage.exec\] Table
+
+Each stage SHALL define exactly one `stage.exec` table.
+
+Required fields:
+
+  Field Ty   pe Description      
+  ---------- ------------------- ----------------------------
+  argv arr   ay\[string\] Tool   invocation argument vector
+
+Optional fields:
+
+  Field Type Des   cription             
+  ---------------- -------------------- ----------------------
+  primary_log st   ring Primary log p   ath (stage-relative)
+  env table\[str   ing\] Environment    overrides
+
+### 3.7.2.6 Path Resolution Rules
+
+-   All `outputs` and `stage outputs` paths are relative to `run_dir`.
+-   All `primary_log` paths are relative to the stage directory.
+-   `exec.argv` is executed with the working directory set to the stage
+    directory.
+-   Relative paths inside `exec.argv` are resolved from the stage
+    directory.
+
+### 3.7.2.7 Execution Semantics
+
+For each stage, PFXCore SHALL:
+
+1.  Verify dependency completion.
+2.  Generate `stage_launch.sh`.
+3.  Execute `exec.argv` via `stage_launch.sh`.
+4.  Capture the exit status.
+5.  Validate declared outputs.
+6.  Update `status.json`.
+
+A stage SHALL be considered successful only if:
+
+-   The execution returns exit code 0, and
+-   All declared outputs exist.
+
+### 3.7.2.8 Export Semantics
+
+In v1, stages SHALL exchange data exclusively through declared `outputs`
+paths.
+
+Use of directory-level export aliases (e.g., `current/`) is not
+supported.
+
+### 3.7.2.9 Validation Rules
+
+PFXCore SHALL treat the following as fatal errors:
+
+-   Missing required fields.
+-   Duplicate stage names or order values.
+-   Empty `exec.argv`.
+-   Missing declared outputs.
+-   Cyclic stage dependencies.
+
+Missing optional fields SHALL use default values.
+
+### 3.7.2.10 Versioning
+
+If `schema_version` is present and unsupported, PFXCore SHALL reject the
+file.
+
+#### 3.7.3 pipeline.toml schema (v1)
+
+Example `pipeline.toml`:
+
+``` toml
+# Example pipeline.toml (v1, wrapper-free) — explicit tool invocation
+
+[pipeline]
+name = "default_pdk_flow"
+description = "genus synth + innovus init/place/cts/route + harvest"
+default_target = "harvest"
+
+# Global conventions used by the stage runner.
+[conventions]
+stages_dir = "stages"
+current_dir = "current"
+status_file = "status.json"
+
+[[stage]]
+name = "synth"
+order = 10
+depends_on = []
+inputs = ["run.toml", "resolved_inputs/design/*", "resolved_inputs/tech/*"]
+
+[stage.exec]
+argv = ["genus", "-batch", "-files", "../../scripts/synth.tcl"]
+primary_log = "logs/synth.log"
+
+outputs = [
+ "stages/10_synth/outputs/netlist.v",
+ "stages/10_synth/outputs/constraints.sdc"
+]
+
+[[stage]]
+name = "init"
+order = 20
+depends_on = ["synth"]
+inputs = [" " "resolved_inputs/tech/*"]
+
+[stage.exec]
+argv = ["innovus", "-batch", "-files", "../../scripts/init.tcl"]
+primary_log = "logs/init.log"
+
+outputs = ["stages/20_init/outputs/design.enc"]
+name = "place"
+order = 30
+depends_on = ["init"]
+inputs = ["
+
+[stage.exec]
+argv = ["innovus", "-batch", "-files", "../../scripts/place.tcl"]
+primary_log = "logs/place.log"
+
+outputs = ["stages/30_place/outputs/design_placed.enc"]
+top = "top_module"
+rtl_type = "systemverilog"
+filelist = "rtl/files.f"
+include_dirs = ["rtl/include"]
+defines = ["SYNTH"]
+sdc_files = ["constraints/top.sdc"]
+blackboxes = ["mem_macro"]
+```
+
+#### 3.8.2 Filelist Semantics and Merge Policy
+
+PFXFlow standardizes RTL ingestion around an EDA-style filelist. The
+user may provide a `design.filelist` (recommended).
+`design.include_dirs` and `design.defines` are **additive** and are
+merged into a resolved filelist by PFXCore.
+
+The resolved filelist is the only filelist consumed by tools; it
+eliminates ambiguity between tool-specific command-line flags and user
+conventions.
+
+The filelist SHALL follow standard EDA conventions:
+
+-   Source file paths
+-   `+incdir+<path>` include directives
+-   `+define+<macro>` preprocessor definitions
+-   `-f <other.f>` nested filelists
+
+Example `files.f`:
+
++incdir+rtl/include +define+USE_IP
+
+-f common.f
+
+rtl/top.sv rtl/core.sv
+
+Relative paths are resolved relative to the filelist location.
+
+#### 3.8.3 Normalization Rules
+
+PFXCore SHALL canonicalize all RTL and constraints into a run-local
+capsule.
+
+PFXCore SHALL:
+
+1.  Expand nested `-f` directives.
+
+2.  Resolve all paths to absolute paths.
+
+3.  Prepend generated `+incdir` and `+define` directives from TOML.
+
+4.  Validate top module.
+
+5.  Order entries deterministically.
+
+6.  Write canonical filelist to:
+
+resolved_inputs/design/rtl/filelist.f
+
+All tools SHALL consume only the resolved filelist.
+
+#### 3.8.4 Canonical Design Layout
+
+Within `resolved_inputs/design/`:
+
+``` text
+resolved_inputs/design/
+ rtl/
+ filelist.f
+ src/ # optional (copy mode)
+ constraints/
+ merged.sdc
+ config/
+ design_resolved.json
+```
+
+Notes: - Copy vs symlink policy is configurable (v1 default: symlink for
+performance; copy for 'frozen' runs). - `constraints/merged.sdc` is
+produced deterministically from `design.sdc_files` in the order
+specified.
+
+#### 3.8.5 Design Manifest
+
+`meta/inputs_manifest.json` SHALL include design inputs (RTL, filelists,
+SDCs) with source paths, run-local paths, and basic metadata (size,
+mtime, optional hash).
+
+### 3.9 Technology Input Contract
+
+#### 3.9.1 Technology Bundle Concept
+
+All technology data SHALL be referenced through named bundles:
+
+``` toml
+[tech]
+bundle = "GENERIC_ADV_NODE_V1"
+corner = "tt"
+
+Bundles are defined in a managed catalog external to studies.
+
+#### 3.9.2 Bundle Definition Schema
+
+Bundles are stored in a managed catalog (site-controlled) and expanded
+by PFXCore into explicit file sets. Technology references remain
+anonymous in this document.
+
+Bundle definitions are stored in:
+
+$PFX_TECH_CATALOG/bundles/<name>.toml
+
+Example bundle:
+
+``` toml
+[bundle]
+name = "GENERIC_ADV_NODE_V1"
+version = "2026Q1"
+
+[timing]
+liberty = ["lib/ss.lib", "lib/tt.lib", "lib/ff.lib"]
+
+[physical]
+cell_lef = ["lef/cells.lef"]
+macro_lef = ["lef/macros.lef"]
+tech_lef = "lef/tech.lef"
+
+[routing]
+cadence_tech = "route/tech.lef"
+synopsys_tf = "route/tech.tf"
+
+[extraction]
+qrc_tech = "pex/qrcTech.tch"
+starrc_tech = "pex/starrc.tch"
+
+[mmmc]
+views = "mmmc/views.tcl"
+
+[metadata]
+units = "ps/um"
+process = "anonymous"
+```
+
+#### 3.9.3 Normalization Rules
+
+PFXCore SHALL expand the bundle into a run-local `resolved_inputs/tech/`
+capsule and validate all required components.
+
+PFXCore SHALL:
+
+1.  Load bundle definition.
+2.  Resolve all referenced files.
+3.  Validate required components.
+4.  Normalize units.
+5.  Generate tool-compatible views.
+6.  Populate resolved directories.
+
+#### 3.9.4 Canonical Technology Layout
+
+Within `resolved_inputs/tech/`:
+
+resolved_inputs/tech/ liberty/ lef/ tech.lef cells.lef macros.lef route/
+cadence_tech.lef synopsys.tf pex/ qrcTech.tch starrc.tch mmmc/ views.tcl
+config/ tech_resolved.json
+
+Notes: - The *router configuration* component is explicitly represented
+under `route/`. - The *PEX tech* component is explicitly represented
+under `pex/`.
+
+#### 3.9.5 Technology Manifest
+
+`meta/inputs_manifest.json` SHALL include technology inputs (LEF,
+liberty, route tech files, extraction tech files, MMMC) with source
+paths, run-local paths, and basic metadata (size, mtime, optional hash).
+
+### 3.10 Study Resource Limits (v1)
+
+PFXStudy enforces study-level resource limits to control concurrency and
+cluster load. Limits are defined in a TOML file at the study root:
+
+`<study>`{=html}/limits.toml
+
+Example:
+
+``` toml
+[concurrency]
+max_runs = 50
+
+[concurrency.per_stage]
+genus = 20
+innovus = 6
+harvest = 50
+```
+
+Rules (v1):
+
+-   Concurrency limits are defined **per study** (global within that
+    study).
+-   Per-stage limits are supported and applied by PFXStudy when
+    scheduling work.
+-   PFXCore does not enforce concurrency limits; it executes a single
+    run deterministically.
+
+### 3.11 Schema Evolution and Migration (v1)
+
+**Schema evolution policy (v1):**
+
+-   Schema versions are checked at runtime.
+-   If an older schema is detected, PFXCore SHALL:
+
+1.  issue a warning,
+2.  attempt an automatic migration when feasible,
+3.  fail the run if migration is required but not possible or fails.
+
+------------------------------------------------------------------------
+
+## 3.12 Variable Propagation Model (v1)
+
+### 3.12.1 Purpose
+
+This section defines the normative mechanism by which all run-level
+variables from `run.toml` are propagated into Tcl environments via
+`pfx_vars.tcl`.
+
+### 3.12.2 Responsibilities
+
+-   PFXStudy generates `run.toml`.
+-   PFXCore consumes `run.toml` and generates `pfx_vars.tcl`.
+
+Wrappers are not used.
+
+### 3.12.3 Generation Rules
+
+PFXCore SHALL:
+
+-   Generate `pfx_vars.tcl` in each stage directory.
+-   Regenerate only with `--force`.
+-   Treat `run.toml` as immutable.
+
+### 3.12.4 Type Mapping
+
+  TOML Type   Tcl Representation
+  ----------- --------------------
+  Integer     integer literal
+  Float       float literal
+  Boolean     0 / 1
+  String      escaped string
+  Array       Tcl list
+  Table       dot-flattened keys
+
+### 3.12.5 Escaping Rules
+
+Strings SHALL be emitted using brace-quoting when possible, otherwise
+with backslash escaping. Dollar, quote, newline, and backslash SHALL be
+escaped.
+
+### 3.12.6 Format
+
+Each variable is emitted as:
+
+    set pfx(<section>.<key>) <value>
+
+Variables SHALL be sorted lexicographically.
+
+------------------------------------------------------------------------
+
+## 3.14 Stage Launch Script Contract (v1)
+
+For each stage, PFXCore SHALL generate:
+
+    stages/<NN>_<stage>/stage_launch.sh
+
+### 3.14.1 Responsibilities
+
+The script SHALL:
+
+1.  Set `set -euo pipefail`.
+2.  Change directory to the stage directory.
+3.  Source `../../env.sh`.
+4.  Invoke `stage.exec.argv`.
+5.  Redirect stdout/stderr to the primary log if specified.
+6.  Propagate the tool exit code.
+
+### 3.14.2 Regeneration
+
+`stage_launch.sh` is generated once and regenerated only with `--force`.
+
+------------------------------------------------------------------------
+
+## 3.15 run.toml Schema (v1)
+
+### 3.15.1 Required Tables
+
+A `run.toml` file SHALL contain:
+
+-   `[run]`
+-   `[doe]`
+-   `[design]`
+-   `[technology]`
+
+### 3.15.2 Optional Tables
+
+-   `[paths]`
+-   `[vars]`
+-   Tool-specific tables
+
+### 3.15.3 \[run\] Table
+
+  Field           Type     Description
+  --------------- -------- -------------------
+  run_id          string   Unique run ID
+  study_name      string   Study identifier
+  semantic_path   string   DOE semantic path
+
+### 3.15.4 Immutability
+
+PFXCore SHALL NOT modify `run.toml`.
+
+------------------------------------------------------------------------
+
+## 3.16 status.json Schema (v1)
+
+Each stage directory SHALL contain `status.json`.
+
+### 3.16.1 Required Fields
+
+  Field         Type     Description
+  ------------- -------- ----------------------
+  stage         string   Stage name
+  order         int      Stage order
+  start_time    string   ISO-8601 timestamp
+  end_time      string   ISO-8601 timestamp
+  exit_code     int      Tool exit status
+  success       bool     Overall success flag
+  primary_log   string   Primary log filename
+
+### 3.16.2 Semantics
+
+A stage is successful iff:
+
+-   `exit_code == 0`, and
+-   All declared outputs exist.
+
+### 3.16.3 Resume Rules
+
+Stages with `success=true` SHALL be skipped unless `--force` is
+specified.
+
+## 4. Data Model and Core Abstractions
+
+## \#
+
+
+------------------------------------------------------------------------
+
+## Example run.toml (Full DOE Instance)
+
+```toml
+[run]
+run_id = "run_0127"
+study_name = "vdd_density_sweep"
+semantic_path = "vdd=0.70/density=0.55/temp=25/r0127"
+
+[doe]
+vdd = 0.70
+density = 0.55
+temp = 25
+
+[design]
+top = "cpu_core"
+rtl_type = "systemverilog"
+filelist = "rtl/files.f"
+include_dirs = ["rtl/include"]
+defines = ["SYNTH","USE_FASTRAM"]
+sdc_files = ["constraints/top.sdc"]
+
+[technology]
+bundle = "ADV14_GENERIC_V1"
+corner = "tt"
+voltage = 0.70
+temperature = 25
+
+[genus]
+effort = "high"
+retime = true
+
+[innovus]
+place_density = 0.70
+cts_mode = "balanced"
+route_effort = "high"
+```
+
