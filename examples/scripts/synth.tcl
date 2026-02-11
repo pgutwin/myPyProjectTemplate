@@ -5,39 +5,48 @@
 # *********************************************************
 source pfx_vars.tcl
 
-set design conehead
-set design_nickname conehead
-set output_dir ../mapped_verilog/genus/${design_nickname}
+set design $pfx_design_design_top
+# design_nickname should be set in pfx_vars.tcl
 
-set_db init_lib_search_path ../enablement
+# Canonical absolute path to stage dir is $pfx_current_stage_dir
+set output_dir ${pfx_current_stage_dir}/outputs
 
-set_db init_hdl_search_path ../rtl/${design_nickname}
-set init_hdl_search_path ../rtl/${design_nickname}
+# $lib_dirs defined in pfx_vars.tcl
+init_lib_search_path ${pfx_tech_lib_dirs}
 
-set_db library {\
-		    asap7sc6t_SEQ_LVT_TT_nldm_211010.lib \
-		    asap7sc6t_AO_LVT_TT_nldm_211010.lib \
-		    asap7sc6t_OA_LVT_TT_nldm_211010.lib \
-		    asap7sc6t_INVBUF_LVT_TT_nldm_211010.lib \
-		    asap7sc6t_SIMPLE_LVT_TT_nldm_211010.lib
-}
+# $pfx_hdl_search_dirs set in pfx_vars.tcl
+init_hdl_search_path ${pfx_design_hdl_search_dirs}
 
-read_hdl -sv { \
-		   cone_100_104_ch.v \
-		   cone_1008_61_ch.v \
-		   cone_1443_203_ch.v \
-		   cone_173_1_ch.v \
-		   cone_1862_128_ch.v \
-		   cone_229_128_ch.v \
-		   cone_431_45_ch.v \
-		   conehead.v \
-		   functions_ch.v
-}
+# set init_hdl_search_path ../rtl/${design_nickname}
+
+# $pfx_lib_files set in pfx_vars.tcl
+set_db library ${pfx_tech_collateral_lib_files}
+
+# set_db library {\
+# 		    asap7sc6t_SEQ_LVT_TT_nldm_211010.lib \
+# 		    asap7sc6t_AO_LVT_TT_nldm_211010.lib \
+# 		    asap7sc6t_OA_LVT_TT_nldm_211010.lib \
+# 		    asap7sc6t_INVBUF_LVT_TT_nldm_211010.lib \
+# 		    asap7sc6t_SIMPLE_LVT_TT_nldm_211010.lib
+# }
+
+read_hdl -sv ${pfx_design_hdl_filelist}
+# read_hdl -sv { \
+# 		   cone_100_104_ch.v \
+# 		   cone_1008_61_ch.v \
+# 		   cone_1443_203_ch.v \
+# 		   cone_173_1_ch.v \
+# 		   cone_1862_128_ch.v \
+# 		   cone_229_128_ch.v \
+# 		   cone_431_45_ch.v \
+# 		   conehead.v \
+# 		   functions_ch.v
+# }
 
 elaborate ${design}
 
 ## Set timing constraints
-read_sdc $init_hdl_search_path/${design}.sdc
+read_sdc ${pfx_design_constraints_sdc_file}
 
 ## Synthesize logic
 syn_generic
@@ -49,7 +58,8 @@ syn_map
 # report_area > <filename>
 
 ## Write out netlist
-write_hdl > ${output_dir}/${design}_mapped.v
-##write_script > <file_name>
+## This needs to match what's in `pipeline.toml` exactly:
+write_hdl > ${output_dir}/netlist.v
+
 
 exit

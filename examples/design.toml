@@ -1,0 +1,16 @@
+[design]
+design_top = "cpu_core"
+design_nickname = "aka_core"
+rtl_type = "systemverilog"
+schema_version = "1"
+
+[sources]
+hdl_filelist = ["aka_cpu_core.sv","aka_cpu_assist.sv","custom_blocks.sv"]
+hdl_search_dirs = ["inputs/design/rtl/","inputs/design/rtl/include"]
+defines = ["SYNTH", "USE_FASTRAM"]
+
+[constraints]
+sdc_file = "inputs/design/constraints/aka_constraints.sdc"
+
+[tools.genus]
+retime = true

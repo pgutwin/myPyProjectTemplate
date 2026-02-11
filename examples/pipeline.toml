@@ -1,67 +1,63 @@
-version = "1.0"
-
 [pipeline]
-name = "cadence_genus_innovus"
-description = "Genus synth + Innovus init/place/route"
-default_target = "route"
+name = "default_pdk_flow"
+description = "genus synth + innovus init/place + harvest"
+default_target = "harvest"
+schema_version = "1"
 
-# Global conventions used by the stage runner.
 [conventions]
 stages_dir = "stages"
-stages_inputs_dir = "inputs"
-stages_outputs_dir = "outputs"
 status_file = "status.json"
 
 [[stage]]
 name = "synth"
 order = 10
-tool = "genus"
 depends_on = []
 inputs = ["run.toml", "inputs/design/*", "inputs/tech/*"]
+outputs = [
+  "stages/10_synth/outputs/netlist.v",
+]
 
 [stage.exec]
 argv = ["genus", "-batch", "-files", "../../scripts/synth.tcl"]
 
-outputs = [
-  "outputs/netlist.v",
-  "outputs/constraints.sdc"
-]
-
 [[stage]]
 name = "init"
 order = 20
-tool = "innovus"
 depends_on = ["synth"]
-inputs = ["../10_synth/outputs/netlist.v", "../10_synth/outputs/constraints.sdc", "input/tech/*"]
+inputs = [
+  "stages/10_synth/outputs/netlist.v",
+]
+outputs = ["stages/20_init/outputs/design.enc"]
 
 [stage.exec]
-argv = ["innovus", "-batch", "-files", "../../scripts/place.tcl"]
-
-outputs = ["outputs/design.enc"]
+argv = ["innovus", "-batch", "-files", "../../scripts/init.tcl"]
 
 [[stage]]
 name = "place"
 order = 30
-tool = "innovus"
 depends_on = ["init"]
-inputs = ["../20_init/outputs/design.enc"]
+inputs = ["stages/20_init/outputs/design.enc"]
+outputs = ["stages/30_place/outputs/design.enc"]
 
 [stage.exec]
 argv = ["innovus", "-batch", "-files", "../../scripts/place.tcl"]
 
-outputs = ["outputs/design.enc"]
-
 [[stage]]
 name = "route"
 order = 40
-tool = "innovus"
 depends_on = ["place"]
-inputs = ["../30_place/outputs/design.enc"]
+inputs = ["stages/30_place/outputs/design.enc"]
+outputs = ["stages/40_route/outputs/design.enc"]
 
 [stage.exec]
 argv = ["innovus", "-batch", "-files", "../../scripts/route.tcl"]
 
-outputs = ["outputs/design.enc"]
+[[stage]]
+name = "harvest"
+order = 99
+depends_on = ["route"]
+inputs = ["stages/40_route/outputs/design.enc"]
+outputs = ["outputs/harvest.json"]
 
-
-
+[stage.exec]
+argv = ["python3", "../../scripts/harvest.py", "--in", "../../stages/40_route/outputs/design.enc", "--out", "../../outputs/harvest.json"]

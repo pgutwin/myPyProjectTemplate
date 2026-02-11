@@ -1,0 +1,22 @@
+[tech]
+name = "ADV14_GENERIC_V1"
+corner = "tt"
+voltage = 0.70
+temperature_c = 25
+schema_version = "1"
+
+[collateral]
+root = "inputs/tech"
+lef_dirs = ["inputs/tech/lef"]
+lef_files = ["adv14_6t.lef","adv16_6t.special.lef"]
+router_ctl_file = "inputs/tech/lef/adv16_6t.tech.lef"
+lib_dirs = ["inputs/tech/lib"]
+lib_files = ["adv14_6t.lib","adv14_6t.special.lib"]
+pex_file = "inputs/tech/adv14.qrc"
+mmmc_dir = "inputs/tech/mmmc"
+
+[tools.genus]
+effort = "high"
+
+[tools.innovus]
+route_effort = "high"

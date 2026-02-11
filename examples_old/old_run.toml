@@ -1,0 +1,33 @@
+[run]
+run_id = "run_0127"
+study_name = "vdd_density_sweep"
+semantic_path = "vdd=0.70/density=0.55/temp=25/r0127"
+
+[doe]
+vdd = 0.70
+density = 0.55
+temp = 25
+
+[design]
+design_top = "cpu_core"
+design_nickname = "my_cpu"
+rtl_type = "systemverilog"
+filelist = "rtl/files.f"
+include_dirs = ["rtl/include"]
+defines = ["SYNTH","USE_FASTRAM"]
+sdc_files = ["constraints/top.sdc"]
+
+[technology]
+bundle = "ADV14_GENERIC_V1"
+corner = "tt"
+voltage = 0.70
+temperature = 25
+
+[genus]
+effort = "high"
+retime = true
+
+[innovus]
+place_density = 0.70
+cts_mode = "balanced"
+route_effort = "high"
