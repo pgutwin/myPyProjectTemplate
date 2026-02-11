@@ -15,11 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-## [n/a] 14 December 2025
+## [n/a] 11 February 2026
 
 ### Added
-- Initial version 
-  - Now with directories saved with .gitkeep
+- Initial version of the spec (finally) complete for PFXCore
+
 
 
 
